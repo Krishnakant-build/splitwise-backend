@@ -1,5 +1,6 @@
 import express from "express";
 import axios from "axios";
+import crypto from "crypto";
 
 const app = express();
 app.use(express.json());
@@ -8,16 +9,79 @@ app.use(express.json());
 const CLIENT_ID = process.env.SPLITWISE_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPLITWISE_CLIENT_SECRET;
 const REDIRECT_URI = process.env.SPLITWISE_REDIRECT_URI;
+const STATE_SECRET = process.env.SPLITWISE_STATE_SECRET;
+
 
 // Temporary in-memory token storage
 let accessToken = null;
 let refreshToken = null;
 
+
+function signState(payload) {
+    const json = JSON.stringify(payload);
+    const b64 = Buffer.from(json).toString("base64url");
+    const sig = crypto
+        .createHmac("sha256", STATE_SECRET)
+        .update(b64)
+        .digest("base64url");
+    return `${b64}.${sig}`;
+}
+
+function verifyState(state) {
+    if (!state || !STATE_SECRET) return null;
+
+    const [b64, sig] = state.split(".");
+    if (!b64 || !sig) return null;
+
+    const expected = crypto
+        .createHmac("sha256", STATE_SECRET)
+        .update(b64)
+        .digest("base64url");
+
+    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+        return null;
+    }
+
+    const json = Buffer.from(b64, "base64url").toString("utf8");
+    const payload = JSON.parse(json);
+
+    // 10 min expiry
+    const maxAgeMs = 10 * 60 * 1000;
+    if (Date.now() - payload.ts > maxAgeMs) return null;
+
+    return payload;
+}
+
+
+app.get("/auth/start", (req, res) => {
+    if (!STATE_SECRET) {
+        return res.status(500).send("Missing SPLITWISE_STATE_SECRET");
+    }
+
+    const state = signState({ ts: Date.now() });
+
+    const params = new URLSearchParams({
+        response_type: "code",
+        client_id: CLIENT_ID,
+        redirect_uri: REDIRECT_URI,
+        state
+    });
+
+    return res.redirect(`https://secure.splitwise.com/oauth/authorize?${params.toString()}`);
+});
+
 // 1️⃣ OAuth Redirect Handler
 app.get("/splitwise/callback", async (req, res) => {
     const code = req.query.code;
+    const state = req.query.state;
 
     console.log("Callback hit with code:", code);
+
+    const verified = verifyState(state);
+    if (!verified) {
+        return res.status(400).send("Invalid state");
+    }
+
     console.log("CLIENT_ID:", CLIENT_ID);
     console.log("CLIENT_SECRET present:", CLIENT_SECRET ? "YES" : "NO");
     console.log("REDIRECT_URI:", REDIRECT_URI);
