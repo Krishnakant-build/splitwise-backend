@@ -10,6 +10,8 @@ const CLIENT_ID = process.env.SPLITWISE_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPLITWISE_CLIENT_SECRET;
 const REDIRECT_URI = process.env.SPLITWISE_REDIRECT_URI;
 const STATE_SECRET = process.env.SPLITWISE_STATE_SECRET;
+const API_KEY = process.env.SPLITWISE_API_KEY;
+
 
 
 // Temporary in-memory token storage
@@ -120,20 +122,17 @@ app.get("/splitwise/callback", async (req, res) => {
     }
 });
 
-// 4️⃣ Get current Splitwise user
 app.get("/api/me", async (req, res) => {
-    if (!accessToken)
-        return res.status(401).json({ error: "Not authenticated" });
+    if (!API_KEY) return res.status(500).json({ error: "Missing SPLITWISE_API_KEY" });
 
     try {
         const response = await axios.get(
             "https://secure.splitwise.com/api/v3.0/get_current_user",
             {
-                headers: { Authorization: `Bearer ${accessToken}` }
+                headers: { Authorization: `Bearer ${API_KEY}` }
             }
         );
 
-        console.log("Fetched current user:", response.data);
         return res.json(response.data);
     } catch (err) {
         console.error("Get user error:", err.response?.data || err);
@@ -141,9 +140,9 @@ app.get("/api/me", async (req, res) => {
     }
 });
 
-// 3️⃣ API endpoint to get expenses (with date filter)
+
 app.get("/api/expenses", async (req, res) => {
-    if (!accessToken) return res.status(401).json({ error: "Not authenticated" });
+    if (!API_KEY) return res.status(500).json({ error: "Missing SPLITWISE_API_KEY" });
 
     const since = req.query.since;
 
@@ -151,12 +150,9 @@ app.get("/api/expenses", async (req, res) => {
         const response = await axios.get(
             `https://secure.splitwise.com/api/v3.0/get_expenses?dated_after=${since}`,
             {
-                headers: { Authorization: `Bearer ${accessToken}` }
+                headers: { Authorization: `Bearer ${API_KEY}` }
             }
         );
-
-        console.log("Expenses returned:", response.data.expenses.length);
-        console.log(JSON.stringify(response.data.expenses, null, 2));
 
         return res.json(response.data);
     } catch (err) {
@@ -164,6 +160,7 @@ app.get("/api/expenses", async (req, res) => {
         return res.status(500).send("Failed to fetch expenses");
     }
 });
+
 
 
 // Root route to prevent 404 on backend root
